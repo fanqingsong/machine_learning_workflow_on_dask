@@ -2,14 +2,8 @@
 from csv import reader
 from sklearn.cluster import KMeans
 import joblib
-
-from dagster import (
-    execute_pipeline,
-    make_python_type_usable_as_dagster_type,
-    pipeline,
-    repository,
-    solid,
-)
+from dask import delayed
+import dask
 
 
 # Load a CSV file
@@ -51,23 +45,19 @@ def getRawIrisData():
 
     return dataset
 
-@solid
-def getTrainData(context):
+@dask.delayed
+def getTrainData():
     dataset = getRawIrisData()
     trainData = [ [one[0], one[1], one[2], one[3]] for one in dataset ]
 
-    context.log.info(
-        "Found {n_cereals} trainData".format(n_cereals=len(trainData))
-    )
-
     return trainData
 
-@solid
-def getNumClusters(context):
+@dask.delayed
+def getNumClusters():
     return 3
 
-@solid
-def train(context, numClusters, trainData):
+@dask.delayed
+def train(numClusters, trainData):
     print("numClusters=%d" % numClusters)
 
     model = KMeans(n_clusters=numClusters)
@@ -79,8 +69,8 @@ def train(context, numClusters, trainData):
 
     return trainData
 
-@solid
-def predict(context, irisData):
+@dask.delayed
+def predict(irisData):
     # test saved prediction
     model = joblib.load('model.kmeans')
 
@@ -91,17 +81,19 @@ def predict(context, irisData):
     print(labels)
 
 
-@pipeline
 def machine_learning_workflow_pipeline():
     trainData = getTrainData()
     numClusters = getNumClusters()
     trainData = train(numClusters, trainData)
-    predict(trainData)
+    total = predict(trainData)
+
+    #total.visualize()
+
+    total.compute()
 
 
 
 if __name__ == "__main__":
-    result = execute_pipeline(
-        machine_learning_workflow_pipeline
-    )
-    assert result.success
+    machine_learning_workflow_pipeline()
+
+
